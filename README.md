@@ -106,9 +106,15 @@ This study explores how interruptions during Supreme Court oral arguments impact
   - <code>glove.6B.100d.txt</code> — Pre-trained word vectors from Stanford NLP.
   - <code>name2gender.json</code> — Name-to-gender dictionary from Rafo et al.
 
-- <code>Script</code>: Contains R and Python analysis scripts and notebooks:
-  - <code>Integration.ipynb</code> — Core pipeline combining sentiment, embeddings, and visualization.
-  - <code>Final_Project_PP0L6801.Rmd</code> — RMarkdown write-up for figures and tables.
+- <code>Script</code>: Contains R and Python analysis scripts:
+  - <code>Integration.ipynb</code> — Core pipeline combining sentiment analysis, embeddings, and visualizations.
+  - <code>Final_Project_PPOL6801.Rmd</code> — RMarkdown file used to generate figures, tables, and final regression outputs.
+  - <code>create_analyze_chunks.py</code> — Segments transcripts into speech chunks between justices and advocates.
+  - <code>advocate_gender.py</code> — Assigns gender labels to advocates using external name dictionaries.
+  - <code>filter.py</code> — Applies filtering logic to remove cases with missing metadata or emotionally charged topics.
+
+  All Python scripts (except the `.Rmd`) were adapted from the original ConvoKit framework and customized to support the specific structure and scope of this replication project.
+
 
 - <code>Plot</code>: Stores output visualizations used in the paper, such as:
   - <code>Cosine_Similarity.png</code>, <code>Neg_Ratio.png</code>, <code>Top_Words.png</code>, etc.
