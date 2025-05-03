@@ -92,8 +92,8 @@ The `raw_data/` provided by the original authors contains source datasets used i
   - <code>name2gender.json</code> — Name-to-gender dictionary from Rafo et al.
 
 - <code>Script</code>: Contains R and Python analysis scripts:
-  - <code>Integration.ipynb</code> — Core pipeline combining sentiment analysis, embeddings, and visualizations.
   - <code>Final_Project_PPOL6801.Rmd</code> — RMarkdown file used to generate figures, tables, and final regression outputs.
+  - <code>Final_Project_PPOL6801.html</code> — HTML output for better reading.
   - <code>create_analyze_chunks.py</code> — Segments transcripts into speech chunks between justices and advocates.
   - <code>advocate_gender.py</code> — Assigns gender labels to advocates using external name dictionaries.
   - <code>filter.py</code> — Applies filtering logic to remove cases with missing metadata or emotionally charged topics.
