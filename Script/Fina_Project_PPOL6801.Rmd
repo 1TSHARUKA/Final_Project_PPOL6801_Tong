@@ -10,7 +10,13 @@ library(ndjson)
 library(jsonlite)
 library(dplyr)
 library(tidyr)
-library(purrr) 
+library(purrr)
+library(tidyverse)
+library(tidytext)
+library(textclean)
+library(SnowballC)
+library(topicmodels)
+library(tm)
 ```
 
 **Main Question 1**: *Do interruptions shift the semantic meaning of an advocate's argument?*
@@ -44,11 +50,6 @@ nrow(df_unique)
 ```
 
 ```{r, warning=FALSE, message=FALSE}
-library(tidyverse)
-library(tidytext)
-library(textclean)
-library(SnowballC)
-
 df_cleaned <- df_unique %>%
   mutate(
     chunk_text_clean = chunk_text %>%
@@ -110,10 +111,6 @@ df_tokens <- df_cleaned %>%
 ### Create document embeddings
 
 ```{r}
-library(tidyr)
-library(purrr)
-
-
 # Function to compute mean GloVe embedding
 get_chunk_embedding <- function(words_in_chunk) {
   mat <- vectors[words_in_chunk, , drop = FALSE]
@@ -296,8 +293,6 @@ interrupted_chunks <- df_cleaned %>%
 ### Tokenize the chunk text (already cleaned)
 
 ```{r}
-library(tidytext)
-
 tokens_sentiment <- interrupted_chunks %>%
   select(case_id, utt_id_first, advocate_name, advocate_gender, chunk_text_clean) %>%
   unnest_tokens(word, chunk_text_clean)
@@ -332,8 +327,6 @@ emotion_summary_negative <- tokens_labeled %>%
 #### Visualization
 
 ```{r}
-library(ggplot2)
-
 ggplot(emotion_summary_negative, aes(x = sentiment, y = prop, fill = advocate_gender)) +
   geom_col(position = "dodge") +
   labs(title = "Proportion of Negative Emotions by Advocate Gender",
@@ -341,7 +334,7 @@ ggplot(emotion_summary_negative, aes(x = sentiment, y = prop, fill = advocate_ge
 ```
 
 ```{r}
-library(ggplot2)
+# Plot for visualization
 
 ggplot(emotion_summary_negative, aes(x = sentiment, y = prop, fill = advocate_gender)) +
   geom_col(position = "dodge", alpha = 0.85) +
@@ -420,6 +413,7 @@ ggplot(df_with_ratios, aes(x = advocate_gender, y = neg_ratio, fill = advocate_g
 ```
 
 ```{r}
+# Plot for visualization
 df_with_ratios <- emotion_scores_normalized
 
 ggplot(df_with_ratios, aes(x = advocate_gender, y = neg_ratio, fill = advocate_gender)) +
@@ -476,10 +470,6 @@ summary(model)
 ```
 
 ```{r}
-library(tidytext)
-library(topicmodels)
-library(tm)
-
 # Create a document-term matrix (DTM)
 lda_input <- df_cleaned %>%
   select(utt_id_first, chunk_text_clean) %>%
@@ -492,6 +482,8 @@ lda_input <- df_cleaned %>%
 ```{r}
 lda_model <- LDA(lda_input, k = 6, control = list(seed = 42))
 ```
+
+## LDA
 
 ```{r}
 chunk_topics <- tidy(lda_model, matrix = "gamma")  # per-doc topic weights
@@ -510,8 +502,6 @@ top_terms <- tidy(lda_model, matrix = "beta") %>%  # per-word topic probabilitie
   ungroup() %>%
   arrange(topic, -beta)
 
-# Plot
-library(ggplot2)
 
 ggplot(top_terms, aes(x = reorder_within(term, beta, topic), y = beta, fill = factor(topic))) +
   geom_col(show.legend = FALSE) +
@@ -522,10 +512,6 @@ ggplot(top_terms, aes(x = reorder_within(term, beta, topic), y = beta, fill = fa
 ```
 
 ```{r}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-
 gender_topics <- topic_df %>%
   filter(!is.na(advocate_gender)) %>%  # Remove rows with NA gender
   group_by(advocate_gender) %>%
@@ -551,9 +537,6 @@ ggplot(gender_topics, aes(x = topic, y = avg_gamma, fill = advocate_gender)) +
 ```
 
 ```{r}
-library(tidytext)
-library(dplyr)
-
 dtm <- df_cleaned %>%
   select(utt_id_first, chunk_text_clean) %>%
   unnest_tokens(word, chunk_text_clean) %>%
