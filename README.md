@@ -135,7 +135,7 @@ This study explores how interruptions during Supreme Court oral arguments impact
 <h2 id="prerequisites">Prerequisites</h2>
 
 This project is written in the R programming language and requires the following packages:<br>
-`tidyverse`, `dplyr`, `readr`, `tidyr`, `stringr`, `tidytext`, `tokenizers`, `ggplot2`, `gridExtra`,`scales`, `lubridate`, `quanteda`, `quanteda.sentiment`, `data.table`, `text2vec`, `wordVectors`
+`tidyverse`, `dplyr`, `readr`, `tidyr`, `stringr`, `tidytext`, `tokenizers`, `ggplot2`, `gridExtra`,`SnowballC`, `topicmodels`, `quanteda`, `quanteda.sentiment`, `text2vec`, `wordVectors`
 
 These can be installed using `install.packages()` or loaded via preferred package manager. Additional dependencies may be required for replicating the original paper’s Word2Vec embedding or advanced modeling.
 
