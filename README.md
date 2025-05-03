@@ -105,8 +105,8 @@ The `raw_data/` provided by the original authors contains source datasets used i
   - <code>Cosine_Similarity.png</code>, <code>Neg_Ratio.png</code>, <code>Top_Words.png</code>, etc.
 
 - <code>Doc</code>: Contains project deliverables:
-  - <code>Final_Project_PPOL6801.pdf</code> — Final written report.
-  - <code>PPOL6801_Final_Tian_Tong.pptx</code> — Slide deck for presentation.
+  - <code>PPOL6801_Final_Project_Report</code> — Final written report.
+  - <code>PPOL6801_Final_Project_Slides.pptx</code> — Slide deck for presentation.
 
 
 <p>All analyses were conducted in R and Python. Data cleaning, modeling, and figure generation can be reproduced from the files above.</p>
