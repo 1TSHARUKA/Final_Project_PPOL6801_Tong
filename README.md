@@ -75,7 +75,7 @@ The `raw_data/` provided by the original authors contains source datasets used i
 
 ---
 
-## Additional Derived Files
+### Additional Derived Files
 
 - **`justice-ideology.txt`**  
   Contains binary liberal/conservative ideology labels for each Supreme Court justice. Ideology is defined as the average of the justice’s Martin–Quinn scores (Martin & Quinn, 2002), with scores < 0 labeled as "liberal" and > 0 as "conservative". 
@@ -83,7 +83,7 @@ The `raw_data/` provided by the original authors contains source datasets used i
 - **`backchannel.txt`**  
   A manually curated list of phrasal backchannel cues (e.g., “uh-huh”, “okay”, “I see”), used to exclude passive affirmations from the interruption detection process.
 
-<h3>Directory Structure</h3>
+## Directory Structure
 
 - <code>Data</code>: Contains raw and processed datasets, including:
   - <code>df_final.csv</code> — Processed chunk-level dataset with metadata.
