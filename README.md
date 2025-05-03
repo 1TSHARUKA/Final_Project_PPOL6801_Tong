@@ -83,25 +83,6 @@ The `raw_data/` provided by the original authors contains source datasets used i
 - **`backchannel.txt`**  
   A manually curated list of phrasal backchannel cues (e.g., “uh-huh”, “okay”, “I see”), used to exclude passive affirmations from the interruption detection process.
 
-<!-- Project Overview -->
-<h2 id="overview">Overview</h2>
-
-<p>
-This repository contains the full materials for the final project in PPOL 6801: <b>Interruptions and Gendered Dynamics in Supreme Court Oral Arguments</b>. The project replicates and extends findings from:
-</p>
-
-<ul>
-  <li>
-    <a href="https://www.cambridge.org/core/journals/journal-of-law-and-courts/article/let-me-just-interrupt-you-estimating-gender-effects-in-supreme-court-oral-arguments/4870F0FD3BEF0E00AF46F8D64EDA2289" target="_blank">
-      Cai et al. (2024) — Journal of Law and Courts
-    </a>
-  </li>
-</ul>
-
-<p>
-This study explores how interruptions during Supreme Court oral arguments impact the semantic and emotional tone of advocates' speech, and whether these effects differ by gender. The analysis integrates ConvoKit speech data, pre-trained GloVe embeddings, and NRC lexicon-based emotion scoring. The final output includes quantitative analysis, visualizations, and a policy-facing summary.
-</p>
-
 <h3>Directory Structure</h3>
 
 - <code>Data</code>: Contains raw and processed datasets, including:
