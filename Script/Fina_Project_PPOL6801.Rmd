@@ -1,0 +1,604 @@
+---
+title: "Untitled"
+author: "Tian Tong"
+date: "2025-04-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ndjson)
+library(jsonlite)
+library(dplyr)
+library(tidyr)
+library(purrr) 
+```
+
+**Main Question 1**: *Do interruptions shift the semantic meaning of an advocate's argument?*
+
+## Preparation
+
+### Load the data
+
+```{r}
+df <- read.csv("data/df_final_with_text.csv")
+
+summary(df$chunk_text)
+```
+
+### Preprocessing
+
+```{r}
+df <- df %>%
+  distinct(case_id, justice_name, advocate_name, utt_id_first, utt_id_last, .keep_all = TRUE)
+
+nrow(df)
+```
+
+```{r}
+df_unique <- df %>%
+  group_by(case_id, utt_id_first, utt_id_last) %>%
+  slice(1) %>%
+  ungroup()
+
+nrow(df_unique)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(tidytext)
+library(textclean)
+library(SnowballC)
+
+df_cleaned <- df_unique %>%
+  mutate(
+    chunk_text_clean = chunk_text %>%
+      replace_non_ascii() %>%       # remove weird characters
+      replace_contraction() %>%     # convert "don't" -> "do not"
+      tolower() %>%                 # lowercase
+      str_replace_all("[[:punct:]]", "") %>% # remove punctuation
+      str_squish()
+  )
+```
+
+```{r}
+# Inspect result
+head(df_cleaned, 10)
+```
+
+## Embedding with GloVe (100d)
+
+```{r, warning=FALSE, message=FALSE}
+library(data.table)
+```
+
+### Load GloVe 100d
+
+```{r}
+glove_path <- "data/glove.6B.100d.txt"
+
+# Read GloVe file
+glove <- fread(
+  glove_path,
+  header = FALSE,
+  sep = " ",
+  quote = "",
+  encoding = "UTF-8",
+  data.table = FALSE
+)
+
+# Separate word column from numeric columns
+words <- glove[, 1]
+vectors <- as.matrix(glove[, -1])
+rownames(vectors) <- words
+```
+
+```{r}
+colnames(df_cleaned)
+```
+
+### Tokenize cleaned text
+
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(tidytext)
+
+df_tokens <- df_cleaned %>%
+  unnest_tokens(word, chunk_text_clean) %>%
+  filter(word %in% rownames(vectors))  # Keep only known words
+```
+
+### Create document embeddings
+
+```{r}
+library(tidyr)
+library(purrr)
+
+
+# Function to compute mean GloVe embedding
+get_chunk_embedding <- function(words_in_chunk) {
+  mat <- vectors[words_in_chunk, , drop = FALSE]
+  if (nrow(mat) == 0) return(rep(NA, 100))  # if no valid words
+  colMeans(mat)
+}
+
+# Apply it by chunk (utt_id_first + utt_id_last to uniquely ID chunk)
+df_embeddings <- df_tokens %>%
+  group_by(case_id, utt_id_first, utt_id_last) %>%
+  summarise(across(word, list), .groups = "drop") %>%
+  mutate(embedding = map(word, get_chunk_embedding)) %>%
+  unnest_wider(embedding, names_sep = "_dim_")
+```
+
+1.  Takes a vector of words
+
+Looks up their GloVe embeddings in `vectors`
+
+Averages them across all valid words in the chunk
+
+Returns a 100-dim vector (or `NA`s if none match)
+
+2.  Groups tokens back into their chunks (using ID fields)
+
+Aggregates the word lists per chunk
+
+Applies `get_chunk_embedding()` to compute the vector
+
+Expands the embedding into 100 separate columns (like `embedding_dim_1` ... `embedding_dim_100`)
+
+## Q1: Semantic Shift via Interruptions
+
+### Add interruption labels to each chunk
+
+```{r}
+df_meta_embeds <- df_unique %>%  # before unnesting and tokenizing
+  select(case_id, utt_id_first, utt_id_last,
+         advocate_name, num_adv_utts_interrupted) %>%
+  left_join(df_embeddings, by = c("case_id", "utt_id_first", "utt_id_last")) %>%
+  mutate(interrupted = ifelse(num_adv_utts_interrupted > 0, "interrupted", "not_interrupted"))
+```
+
+```{r}
+colnames(df_meta_embeds)
+```
+
+### Group chunks by advocate & interruption status
+
+```{r}
+library(dplyr)
+
+advocate_embeddings <- df_meta_embeds %>%
+  filter(!is.na(embedding_dim_V2)) %>%  # check if embedding exists
+  group_by(advocate_name, interrupted) %>%
+  summarise(across(starts_with("embedding_dim_V"), mean), .groups = "drop")
+```
+
+```{r}
+advocate_embeddings_wide <- advocate_embeddings %>%
+  pivot_wider(
+    names_from = interrupted,
+    values_from = starts_with("embedding_dim"),
+    names_prefix = "int_"
+  )
+```
+
+### Define cosine similarity and apply to each row
+
+```{r}
+cosine_similarity <- function(a, b) {
+  sum(a * b) / (sqrt(sum(a * a)) * sqrt(sum(b * b)))
+}
+```
+
+```{r}
+# Get all column names
+all_cols <- colnames(advocate_embeddings_wide)
+
+# Filter the ones ending with _int_interrupted and _int_not_interrupted
+int_1_cols <- grep("_int_interrupted$", all_cols, value = TRUE)
+int_0_cols <- grep("_int_not_interrupted$", all_cols, value = TRUE)
+
+# Sort to ensure same order
+int_1_cols <- sort(int_1_cols)
+int_0_cols <- sort(int_0_cols)
+```
+
+```{r}
+library(text2vec)  # For cosine similarity
+
+advocate_embeddings_wide <- advocate_embeddings_wide %>%
+  rowwise() %>%
+  mutate(
+    cosine_sim = sim2(
+      x = matrix(c_across(all_of(int_0_cols)), nrow = 1),
+      y = matrix(c_across(all_of(int_1_cols)), nrow = 1),
+      method = "cosine"
+    )[1, 1]
+  ) %>%
+  ungroup()
+```
+
+### Conclusions and summary
+
+```{r}
+mean(advocate_embeddings_wide$cosine_sim, na.rm = TRUE)
+summary(advocate_embeddings_wide$cosine_sim)
+```
+
+```{r}
+colnames(advocate_embeddings_wide)
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(advocate_embeddings_wide, aes(x = cosine_sim)) +
+  geom_histogram(binwidth = 0.001, fill = "black", color = "white") +
+  coord_cartesian(xlim = c(0.98, 1)) +  # zoom into dense range
+  theme_minimal() +
+  labs(
+    title = "Cosine Similarity: Interrupted vs. Not Interrupted",
+    x = "Cosine Similarity",
+    y = "Count of Arguments"
+  )
+
+```
+
+```{r}
+colnames(df_unique)
+```
+
+```{r}
+df_with_text <- df_meta_embeds %>%
+  left_join(df_unique %>% 
+              select(case_id, utt_id_first, chunk_text), 
+            by = c("case_id", "utt_id_first"))
+```
+
+```{r}
+# Step 1: Find the lowest cosine similarity row
+lowest <- advocate_embeddings_wide %>%
+  filter(!is.na(cosine_sim)) %>%
+  arrange(cosine_sim) %>%
+  slice(1)
+
+# Step 2: Pull both types of chunks for that advocate
+df_with_text %>%
+  filter(advocate_name == lowest$advocate_name) %>%
+  select(interrupted, chunk_text)
+
+lowest$cosine_sim
+```
+
+#### 1. **Semantic content is largely preserved**
+
+The near-perfect cosine similarity implies that **interrupted and uninterrupted statements from the same advocate have extremely similar semantic content**. That is, being interrupted **does not drastically shift the semantic vector** (meaning) of an advocate's chunk --- at least **as measured by average GloVe embeddings**.
+
+#### 2. **Interruptions may affect delivery more than content**
+
+This supports an interpretation that interruptions likely **disrupt flow or perception**, but not necessarily the semantic substance. This aligns with research noting that interruptions often reflect **power dynamics or interactional dominance**, rather than forcing an actual change in argumentative content.
+
+## Q2: Gender effects on interruptions
+
+Updated methodology:
+
+We apply the NRC sentiment lexicon to assign emotion categories to each justice interruption. We then quantify the emotional content of interruptions directed at male versus female advocates, focusing on negative emotions (e.g., anger, disgust). Statistical comparisons test whether interruptions toward female advocates tend to be more emotionally negative, supporting our hypothesis of gendered treatment.
+
+### Filter interrupted chunks only
+
+These are where the **advocate was interrupted**, and we're interested in what the **justice says**.
+
+```{r}
+interrupted_chunks <- df_cleaned %>%
+  filter(num_adv_utts_interrupted > 0)
+```
+
+### Tokenize the chunk text (already cleaned)
+
+```{r}
+library(tidytext)
+
+tokens_sentiment <- interrupted_chunks %>%
+  select(case_id, utt_id_first, advocate_name, advocate_gender, chunk_text_clean) %>%
+  unnest_tokens(word, chunk_text_clean)
+```
+
+#### Load the NRC Lexicon
+
+```{r}
+nrc <- get_sentiments("nrc")
+```
+
+#### Join Tokens with NRC
+
+```{r}
+tokens_labeled <- tokens_sentiment %>%
+  inner_join(nrc, by = "word")
+```
+
+### Example: Negative emotions only
+
+```{r}
+negative_emotions <- c("anger", "fear", "disgust", "sadness")
+
+emotion_summary_negative <- tokens_labeled %>%
+  filter(sentiment %in% negative_emotions) %>%
+  count(advocate_gender, sentiment) %>%
+  group_by(advocate_gender) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
+```
+
+#### Visualization
+
+```{r}
+library(ggplot2)
+
+ggplot(emotion_summary_negative, aes(x = sentiment, y = prop, fill = advocate_gender)) +
+  geom_col(position = "dodge") +
+  labs(title = "Proportion of Negative Emotions by Advocate Gender",
+       y = "Proportion", x = "Emotion Category")
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(emotion_summary_negative, aes(x = sentiment, y = prop, fill = advocate_gender)) +
+  geom_col(position = "dodge", alpha = 0.85) +
+  scale_fill_manual(
+    values = c("F" = "gray30", "M" = "gray70")  # darker for F, lighter for M
+  ) +
+  labs(
+    title = "Proportion of Negative Emotions by Advocate Gender",
+    y = "Proportion",
+    x = "Emotion Category",
+    fill = "Advocate Gender"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(color = "black"),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+### Quantify emotion scores per chunk
+
+```{r}
+emotion_scores <- tokens_labeled %>%
+  filter(sentiment %in% c("positive", "negative", "anger", "disgust", "fear", "sadness")) %>%
+  group_by(case_id, utt_id_first, advocate_name, advocate_gender, sentiment) %>%
+  summarise(word_count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = sentiment,
+    values_from = word_count,
+    values_fill = 0
+  )
+```
+
+### Normalize emotion scores
+
+```{r}
+emotion_scores_normalized <- emotion_scores %>%
+  mutate(
+    total_emotion_words = positive + negative + anger + disgust + fear + sadness,
+    neg_ratio = (negative + anger + disgust + fear + sadness) / total_emotion_words,
+    pos_ratio = positive / total_emotion_words
+  )
+```
+
+```{r}
+emotion_gender_summary <- emotion_scores_normalized %>%
+  group_by(advocate_gender) %>%
+  summarise(
+    avg_neg_ratio = mean(neg_ratio, na.rm = TRUE),
+    avg_pos_ratio = mean(pos_ratio, na.rm = TRUE),
+    n = n()
+  )
+
+emotion_gender_summary
+```
+
+```{r}
+t.test(neg_ratio ~ advocate_gender, data = emotion_scores_normalized)
+```
+
+```{r}
+df_with_ratios <- emotion_scores_normalized
+
+ggplot(df_with_ratios, aes(x = advocate_gender, y = neg_ratio, fill = advocate_gender)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  labs(
+    title = "Distribution of Negative Sentiment Ratio per Interruption",
+    x = "Advocate Gender",
+    y = "Negative Sentiment Ratio"
+  ) +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal()
+
+```
+
+```{r}
+df_with_ratios <- emotion_scores_normalized
+
+ggplot(df_with_ratios, aes(x = advocate_gender, y = neg_ratio, fill = advocate_gender)) +
+  geom_boxplot(alpha = 0.8, outlier.shape = NA) +
+  scale_fill_manual(
+    values = c("F" = "gray40", "M" = "gray80")  # Adjust color tones for clarity
+  ) +
+  labs(
+    title = "Distribution of Negative Sentiment Ratio per Interruption",
+    x = "Advocate Gender",
+    y = "Negative Sentiment Ratio"
+  ) +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank(),
+    text = element_text(color = "black")
+  )
+```
+
+We compared the proportion of negative sentiment in interruptions directed at male and female advocates using the NRC lexicon. After computing the negative sentiment ratio per interruption, we found that interruptions toward female advocates contained a significantly higher proportion of negative emotion words compared to those toward male advocates (Welch t-test, *p* = 0.0078).\
+
+This suggests a gender disparity in the tone of interruptions, with a greater frequency of dismissive or hostile language used when addressing female advocates.
+
+### Linear Regression
+
+```{r}
+colnames(df_cleaned)
+```
+
+```{r}
+df_model <- emotion_scores_normalized %>%
+  left_join(
+    df_cleaned %>% select(case_id, utt_id_first, advocate_gender, adv_experience_int, case_year, female_issue, advocate_ideology, ideology_matches),
+    by = c("case_id", "utt_id_first")
+  )
+```
+
+```{r}
+colnames(df_model)
+```
+
+```{r}
+df_model <- df_model %>%
+  mutate(advocate_gender = coalesce(advocate_gender.x, advocate_gender.y)) %>%
+  select(-advocate_gender.x, -advocate_gender.y)
+```
+
+```{r}
+model <- lm(neg_ratio ~ advocate_gender + adv_experience_int + case_year + female_issue + advocate_ideology + ideology_matches, data = df_model)
+summary(model)
+```
+
+```{r}
+library(tidytext)
+library(topicmodels)
+library(tm)
+
+# Create a document-term matrix (DTM)
+lda_input <- df_cleaned %>%
+  select(utt_id_first, chunk_text_clean) %>%
+  unnest_tokens(word, chunk_text_clean) %>%
+  anti_join(stop_words, by = "word") %>%
+  count(utt_id_first, word) %>%
+  cast_dtm(utt_id_first, word, n)
+```
+
+```{r}
+lda_model <- LDA(lda_input, k = 6, control = list(seed = 42))
+```
+
+```{r}
+chunk_topics <- tidy(lda_model, matrix = "gamma")  # per-doc topic weights
+
+# Merge topic probabilities back to original metadata
+topic_df <- chunk_topics %>%
+  pivot_wider(names_from = topic, values_from = gamma, names_prefix = "topic_") %>%
+  left_join(df_cleaned, by = c("document" = "utt_id_first"))
+```
+
+```{r}
+# Extract top terms per topic
+top_terms <- tidy(lda_model, matrix = "beta") %>%  # per-word topic probabilities
+  group_by(topic) %>%
+  top_n(10, beta) %>%  # top 10 words
+  ungroup() %>%
+  arrange(topic, -beta)
+
+# Plot
+library(ggplot2)
+
+ggplot(top_terms, aes(x = reorder_within(term, beta, topic), y = beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(x = "Term", y = "Beta (Word Importance)", title = "Top 10 Words per Topic")
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+gender_topics <- topic_df %>%
+  filter(!is.na(advocate_gender)) %>%  # Remove rows with NA gender
+  group_by(advocate_gender) %>%
+  summarize(across(starts_with("topic_"), \(x) mean(x, na.rm = TRUE))) %>%
+  pivot_longer(
+    cols = starts_with("topic_"),
+    names_to = "topic",
+    values_to = "avg_gamma"
+  )
+
+# Plot
+ggplot(gender_topics, aes(x = topic, y = avg_gamma, fill = advocate_gender)) +
+  geom_col(position = "dodge", alpha = 0.9) +
+  scale_fill_manual(values = c("F" = "gray30", "M" = "gray70")) +
+  labs(
+    x = "Topic",
+    y = "Average Gamma (Topic Proportion)",
+    title = "Topic Distribution by Advocate Gender",
+    fill = "Advocate Gender"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+library(tidytext)
+library(dplyr)
+
+dtm <- df_cleaned %>%
+  select(utt_id_first, chunk_text_clean) %>%
+  unnest_tokens(word, chunk_text_clean) %>%
+  anti_join(stop_words, by = "word") %>%
+  count(utt_id_first, word) %>%
+  cast_dtm(utt_id_first, word, n)
+
+
+lda_model_10 <- LDA(dtm, k = 10, control = list(seed = 123))
+
+# Get top terms per topic
+top_terms <- tidy(lda_model_10, matrix = "beta") %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10) %>%  # top 10 words
+  ungroup()
+
+# View terms per topic
+top_terms %>% 
+  arrange(topic, -beta) %>% 
+  print(n = 60)  # print more rows for inspection
+
+```
+
+```{r}
+# Prepare topic dataframe and join with emotion scores
+topic_df <- chunk_topics %>%
+  rename(utt_id_first = document) %>%  # Align column name for join
+  pivot_wider(
+    names_from = topic,
+    values_from = gamma,
+    names_prefix = "topic_"
+  ) %>%
+  left_join(
+    emotion_scores_normalized %>%
+      select(utt_id_first, neg_ratio, advocate_gender),
+    by = "utt_id_first"
+  )
+
+# Fit linear model predicting negative sentiment ratio
+model_topic <- lm(
+  neg_ratio ~ advocate_gender + topic_1 + topic_2 + topic_3 + topic_4 + topic_5 + topic_6,
+  data = topic_df
+)
+
+# Output model summary
+summary(model_topic)
+
+```
