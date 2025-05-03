@@ -69,6 +69,10 @@ The `raw_data/` provided by the original authors contains source datasets used i
   A cross-cultural name-gender mapping resource used to infer advocate gender based on first names.  
   [https://github.com/OpenGenderTracking/globalnamedata](https://github.com/OpenGenderTracking/globalnamedata)
 
+- **GloVe Word Embeddings (100d)**  
+  Pre-trained 100-dimensional GloVe vectors used to compute semantic embeddings of advocate speech.  
+  [https://nlp.stanford.edu/data/glove.6B.zip](https://nlp.stanford.edu/data/glove.6B.zip)
+
 ---
 
 ## Additional Derived Files
